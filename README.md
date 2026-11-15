@@ -17,11 +17,11 @@ the best trade-offs across an arbitrary number of competing criteria. This work 
 
     # MOO with specific objectives
     python optimize_layouts.py --config config.yaml \
-        --objectives engram_keys,engram_rows,engram_columns,engram_order
+        --objectives engram_key_preference,engram_same_finger,engram_order
 
     # MOO with custom weights and directions
     python optimize_layouts.py --config config.yaml \
-        --objectives engram_keys,engram_rows,engram_columns,engram_order \
+        --objectives engram_key_preference,engram_row_separation,engram_same_row,engram_same_finger \
         --weights 1.0,2.0,0.5,0.75 --maximize true,true,false,true \
         --max-solutions 100 --time-limit 3600 --verbose
 
@@ -31,17 +31,23 @@ the best trade-offs across an arbitrary number of competing criteria. This work 
 
 ## Analysis and (keyboard layout) visualization
   ```bash
-    # Analyze optimization results
-    python analyze_results.py --results-dir output/layouts
+    # Normalize a raw score table
+    python utilities/normalize_and_analyze.py normalize input/some_scores.csv
 
-    # Compare input data (raw vs normalized)
-    python analyze_input.py --config config.yaml
+    # Compare raw vs normalized data (distributions, top scores, summary report)
+    python utilities/normalize_and_analyze.py analyze \
+        --raw input/some_scores.csv --norm input/some_scores_normalized.csv \
+        --output-dir output/analysis
+
+    # Normalize then analyze in one step
+    python utilities/normalize_and_analyze.py normalize-analyze input/some_scores.csv \
+        --output-dir output/analysis
 
     # Visualize keyboard layout as ASCII
-    python display_layout.py --letters "etaoinsrhl" --positions "FDESVRJKIL"
+    python keyboards/display_layout.py --letters "etaoinsrhl" --positions "FDESVRJKIL"
 
     # Generate rich HTML keyboard layout
-    python display_layout.py --letters "zplr  diwychts  aeomxvbn  ugkfqj" \
+    python keyboards/display_layout.py --letters "zplr  diwychts  aeomxvbn  ugkfqj" \
       --positions "QWERTYUIOPASDFGHJKL;ZXCVBNM,./['" \
       --html
   ```
@@ -60,11 +66,6 @@ optimize_layouts/
 ├── moo_search.py                        # Pareto-optimal search algorithms
 ├── config.py                            # Configuration management
 │
-│ # MOO results analysis
-├── layouts_consolidate.py               # Select global Pareto solutions from separate files
-├── layouts_filter.py                    # Filter MOO results
-├── layouts_plot.py                      # Analyze and plot MOO results
-│
 │ # I/O (inputs are for a keyboard optimization study)
 ├── input/
 │   ├── engram_2key_scores.csv          # Position-pair scoring (bigram)
@@ -73,26 +74,26 @@ optimize_layouts/
 │       ├── english-letter-pair-counts-google-ngrams_normalized.csv
 │       └── english-letter-triple-counts-google-ngrams_normalized.csv
 ├── run_jobs.py                          # Run multiple jobs
-├── output/                              
+├── output/
 │   └── layouts/                         # MOO optimization results
 │
 │ # Optional utilities
 ├── utilities/
-│   ├── calc_positions_items.py          # Calculate permutations
-│   ├── count_files.py                   # Count files in a folder (with find command)
-│   ├── generate_command.py              # Generate command to score and visualize layouts
+│   ├── calc_positions_items.sh          # Calculate permutations
 │   ├── normalize_and_analyze.py         # Normalize data and compare raw vs normalized data
-│   └── run_jobs_slurm.sh                # SLURM cluster job submission
+│   ├── run_jobs_slurm.sh                # SLURM cluster job submission
+│   ├── test_assignment.py               # Correctness check: pre-assignment, constraints, exact scoring
+│   └── test_bb_search.py                # Correctness check: branch-and-bound agrees with exhaustive search
 │
 │ # Keyboard study
-└── keyboard_study/
+└── keyboards/
     ├── README_keyboards.md              # README for keyboard layout optimization study
     ├── analyze_frequencies.py           # Analyze item-pair (bigram) frequencies
-    ├── compare_layouts.py               # Keyboard comparisons with filtering and plotting
+    ├── layouts_compare.py               # Keyboard comparisons with filtering and plotting
     ├── display_layout.py                # Keyboard visualization from single layout
     ├── display_layouts.py               # Keyboard visualization from table of layouts
-    ├── generate_configs1.py             # Generate config files for parallel optimization phase 1
-    └── generate_configs2.py             # Generate config files for parallel optimization phase 2
+    ├── generate_configs_from_scratch.py # Generate config files for parallel optimization phase 1
+    ├── generate_configs_from_csv.py     # Generate config files for parallel optimization phase 2
   ```
 
 ## Inputs
@@ -115,15 +116,17 @@ and each position-pair is represented by two position characters.
     ```
   Position-pair (normalized multi-objective) scores file:       
     ```csv
-      position_pair,engram_keys,engram_rows,engram_columns,engram_order
-      FD,0.85,0.72,0.91,0.78,0.65,0.88
-      DE,0.72,0.68,0.88,0.82,0.71,0.85
-      ES,0.68,0.71,0.85,0.75,0.69,0.82
+      position_pair,engram_key_preference,engram_row_separation,engram_same_row,engram_same_finger
+      FD,0.85,0.72,0.91,0.78
+      DE,0.72,0.68,0.88,0.82
+      ES,0.68,0.71,0.85,0.75
     ```
 
 ## Multi-objective search algorithms
 The system provides two Pareto-optimal search algorithms with different performance characteristics:
-Exhaustive Search (Default)
+Select with `--search-mode exhaustive|branch-bound` (default: `exhaustive`).
+
+## Exhaustive Search (Default)
 
 Guaranteed complete: Finds ALL Pareto-optimal solutions
 Simple and reliable: No complex pruning logic or upper bound calculations
@@ -140,8 +143,8 @@ Preserves optimality: Mathematically sound pruning ensures no optimal solutions 
 The system supports both bigram (2-key) and trigram (3-key) objective scoring; 
 it automatically detects which objectives are bigram vs trigram based on input scoring tables.
 
-- **Bigram objectives**: Scored using position-pair table (e.g., `engram_keys,engram_rows,engram_columns,engram_order`,...)
-- **Trigram objectives**: Scored using position-triple table (e.g., `engram_3key_order`)
+- **Bigram objectives**: Scored using position-pair table (columns of `input/engram_2key_scores.csv`: `engram_key_preference`, `engram_row_separation`, `engram_same_row`, `engram_same_finger`, `engram_outside`, `engram_avg4_score`)
+- **Trigram objectives**: Scored using position-triple table (column of `input/engram_3key_order_scores.csv`: `engram_order`)
 - **Weighting**: Bigram and trigram scores are weighted by item-pair/triple scores
 
 ## Output
@@ -161,13 +164,22 @@ it automatically detects which objectives are bigram vs trigram based on input s
   - Global Pareto front analysis across multiple runs
 
 ## Running many configurations
-You can generate configuration files
-by creating your own generate_configs.py script,
-following the example in keyboards/generate_configs1.py,
-then modify the run_jobs_local.py script for your needs
-(see run_jobs_slurm.sh for running jobs on a linux cluster):
+Generate batches of config files with `keyboards/generate_configs_from_scratch.py` or
+`keyboards/generate_configs_from_csv.py`, then drive them all through `optimize_layouts.py`
+with `run_jobs.py`, which adaptively throttles parallelism based on live CPU/memory usage
+(see `utilities/run_jobs_slurm.sh` for running jobs on a linux cluster instead).
+The generators resolve `../config.yaml` and `../output/configs` relative to the current directory,
+so run them from inside `keyboards/`; run `run_jobs.py` from the repository root:
 
 ```bash
-  python generate_configs.py
-  python run_jobs.py
+  (cd keyboards && python generate_configs_from_scratch.py)
+  python run_jobs.py                                   # reads output/configs/config_N.yaml
+```
+
+## Correctness checks
+The scripts in `utilities/` are standalone (not pytest). Run them from the repository root:
+
+```bash
+  PYTHONPATH=. python utilities/test_assignment.py   # pre-assignment, constraints, exact scoring
+  PYTHONPATH=. python utilities/test_bb_search.py    # branch-and-bound matches exhaustive search
 ```

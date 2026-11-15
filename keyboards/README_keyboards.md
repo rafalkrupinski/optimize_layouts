@@ -11,11 +11,16 @@ License: MIT License (see LICENSE)
 **Visualization:**
 - `display_layout.py` - Visualize single 32-key layouts (ASCII or HTML output)
 - `display_layouts.py` - Display multiple layouts from CSV (auto-detects format)
-- `compare_layouts.py` - Compare layouts with parallel coordinates and heatmap plots
+- `layouts_compare.py` - Compare layouts with parallel coordinates and heatmap plots
 
 **Analysis:**
 - `analyze_frequencies.py` - Analyze letter-bigram frequency relationships and cumulative coverage
 - `plot_frequencies.py` - Plot letter-bigram statistics from CSV data
+
+**Results processing:**
+- `layouts_consolidate.py` - Select global Pareto solutions from separate files
+- `layouts_filter_scores.py` - Filter MOO results
+- `layouts_filter_patterns.py` - Shrink solution sets by layout pattern/ergonomic rules
 
 All scripts include `--help` for usage details and support multiple input formats.
 
